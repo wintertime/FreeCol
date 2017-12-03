@@ -27,6 +27,7 @@ import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.geom.GeneralPath;
 import java.awt.image.BufferedImage;
+import java.awt.image.RescaleOp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -56,6 +57,7 @@ import net.sf.freecol.common.model.Unit;
 import net.sf.freecol.common.option.GameOptions;
 import net.sf.freecol.common.resources.ResourceManager;
 import net.sf.freecol.common.util.Utils;
+
 import static net.sf.freecol.common.util.CollectionUtils.*;
 import static net.sf.freecol.common.util.StringUtils.*;
 
@@ -220,7 +222,7 @@ public final class TileViewer extends FreeColClientHolder {
         Graphics2D g = image.createGraphics();
         g.translate(0, compoundHeight - terrainTileSize.height);
         displayTileWithBeachAndBorder(g, tile);
-        displayTileItems(g, tile, overlayImage);
+        displayTileItems(g, tile, null, overlayImage);
         g.dispose();
         return image;
     }
@@ -364,9 +366,11 @@ public final class TileViewer extends FreeColClientHolder {
     private void displayTile(Graphics2D g, Tile tile, BufferedImage overlayImage) {
         displayTileWithBeachAndBorder(g, tile);
         if (tile.isExplored()) {
-            displayTileItems(g, tile, overlayImage);
-            displaySettlementWithChipsOrPopulationNumber(g, tile, false);
-            displayFogOfWar(g, tile);
+            boolean dofow = displayFogOfWar(g, tile);
+            RescaleOp rop = dofow ? new RescaleOp(0.8f, 0.0f, null) : null;  // todo: Bug here???
+            displayTileItems(g, tile, rop, overlayImage);
+            displaySettlementWithChipsOrPopulationNumber(g, tile, false, rop);
+
             displayOptionalTileText(g, tile);
         }
     }
@@ -517,8 +521,9 @@ public final class TileViewer extends FreeColClientHolder {
      * @param g The {@code Graphics2D} object on which to draw
      *     the {@code Tile}.
      * @param tile The {@code Tile} to draw.
+     * @return true if there is fog
      */
-    void displayFogOfWar(Graphics2D g, Tile tile) {
+    boolean displayFogOfWar(Graphics2D g, Tile tile) {
         if (getGame() != null
             && getSpecification().getBoolean(GameOptions.FOG_OF_WAR)
             && getMyPlayer() != null
@@ -529,7 +534,9 @@ public final class TileViewer extends FreeColClientHolder {
                                                       0.2f));
             g.fill(fog);
             g.setComposite(oldComposite);
+            return true;
         }
+        return false;
     }
 
     /**
@@ -612,9 +619,11 @@ public final class TileViewer extends FreeColClientHolder {
      * @param g The Graphics2D object on which to draw the Tile.
      * @param tile The Tile to draw.
      * @param withNumber Whether to display the number of units present.
+     * @param rop An optional RescaleOp for fog of war.
      */
     void displaySettlementWithChipsOrPopulationNumber(
-            Graphics2D g, Tile tile, boolean withNumber) {
+            Graphics2D g, Tile tile, boolean withNumber, RescaleOp rop) {
+        //todo: use rop
         final Player player = getMyPlayer();
         final Settlement settlement = tile.getSettlement();
 
@@ -693,17 +702,23 @@ public final class TileViewer extends FreeColClientHolder {
      *
      * @param g The Graphics2D object on which to draw the Tile.
      * @param tile The Tile to draw.
+     * @param rop An optional RescaleOp for fog of war.
      * @param overlayImage The BufferedImage for the tile overlay.
      */
-    void displayTileItems(Graphics2D g, Tile tile, BufferedImage overlayImage) {
+    void displayTileItems(Graphics2D g, Tile tile, RescaleOp rop,
+                          BufferedImage overlayImage) {
         // ATTENTION: we assume that only overlays and forests
         // might be taller than a tile.
+        BufferedImage image = new BufferedImage(
+            tileWidth, tileHeight+halfHeight, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g1 = (Graphics2D)image.getGraphics();
+        g1.translate(0, halfHeight);
         // layer additions and improvements according to zIndex
         List<TileItem> tileItems = tile.getCompleteItems();
         int startIndex = 0;
         for (int index = startIndex; index < tileItems.size(); index++) {
             if (tileItems.get(index).getZIndex() < Tile.OVERLAY_ZINDEX) {
-                displayTileItem(g, tile, tileItems.get(index));
+                displayTileItem(g1, tile, tileItems.get(index));
                 startIndex = index + 1;
             } else {
                 startIndex = index;
@@ -712,12 +727,12 @@ public final class TileViewer extends FreeColClientHolder {
         }
         // Tile Overlays (eg. hills and mountains)
         if (overlayImage != null) {
-            g.drawImage(overlayImage,
+            g1.drawImage(overlayImage,
                 0, (tileHeight - overlayImage.getHeight()), null);
         }
         for (int index = startIndex; index < tileItems.size(); index++) {
             if (tileItems.get(index).getZIndex() < Tile.FOREST_ZINDEX) {
-                displayTileItem(g, tile, tileItems.get(index));
+                displayTileItem(g1, tile, tileItems.get(index));
                 startIndex = index + 1;
             } else {
                 startIndex = index;
@@ -728,14 +743,17 @@ public final class TileViewer extends FreeColClientHolder {
         if (tile.isForested()) {
             BufferedImage forestImage = lib.getForestImage(
                 tile.getType(), tile.getRiverStyle());
-            g.drawImage(forestImage,
+            g1.drawImage(forestImage,
                 0, (tileHeight - forestImage.getHeight()), null);
         }
 
         // draw all remaining items
         for (TileItem ti : tileItems.subList(startIndex, tileItems.size())) {
-            displayTileItem(g, tile, ti);
+            displayTileItem(g1, tile, ti);
         }
+
+        g1.dispose();
+        g.drawImage(image, rop, 0, -halfHeight); // bug here???
     }
 
     /**

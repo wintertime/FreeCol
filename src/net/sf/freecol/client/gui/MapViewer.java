@@ -36,6 +36,7 @@ import java.awt.geom.GeneralPath;
 import java.awt.geom.Point2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.RescaleOp;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -1370,6 +1371,7 @@ public final class MapViewer extends FreeColClientHolder {
         boolean withNumbers = colonyLabels == ClientOptions.COLONY_LABELS_CLASSIC;
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
                            RenderingHints.VALUE_ANTIALIAS_OFF);
+        RescaleOp fow = new RescaleOp(0.8f, 0.0f, null); // todo: Bug here???
         map.forSubMap(x0, y0, lastColumn-firstColumn+1, lastRow-firstRow+1,
             (Tile tile) -> {
                 if (!tile.isExplored())
@@ -1381,11 +1383,14 @@ public final class MapViewer extends FreeColClientHolder {
                 final int yt = (y-y0) * halfHeight;
                 g.translate(xt, yt);
 
+                boolean dofow = tv.displayFogOfWar(g, tile);
+                RescaleOp rop = dofow ? fow : null;
+
                 BufferedImage overlayImage = lib.getOverlayImage(tile, overlayCache);
-                tv.displayTileItems(g, tile, overlayImage);
+                tv.displayTileItems(g, tile, rop, overlayImage);
                 tv.displaySettlementWithChipsOrPopulationNumber(
-                    g, tile, withNumbers);
-                tv.displayFogOfWar(g, tile);
+                    g, tile, withNumbers, rop);
+
                 tv.displayOptionalTileText(g, tile);
 
                 g.translate(-xt, -yt);
